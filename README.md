@@ -224,28 +224,13 @@ web_interface/
 └── build/                      # Compiled frontend
 ```
 
-## Troubleshooting
-
-### Common Issues
+## Common Issues
 
 1. **Poor spine detection**: Try adjusting the confidence threshold or ensure good lighting in your images
 2. **OCR errors**: The text cleaning system should handle most issues, but very blurry or low-contrast text may still cause problems
 3. **No matches found**: Check that the book exists in the Open Library database, or try adjusting the matching confidence threshold
 
-### Getting Help
-
-If you encounter issues:
-
-1. Check the console output for error messages
-2. Verify your Google Vision API key is correctly configured
-3. Ensure all dependencies are properly installed
-4. Review the configuration settings for your use case
-
-## License
-
-This project is licensed under the MIT License. See the LICENSE file for details.
-
-## Acknowledgments
+## Tools Used
 
 This system builds upon several excellent open-source projects and services:
 
