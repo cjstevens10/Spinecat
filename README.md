@@ -2,7 +2,9 @@
 
 **Automated Book Spine Recognition and Library Matching System**
 
-Spinecat is an intelligent system that automatically identifies books from photographs of book spines. It uses computer vision to detect book spines, extracts text using optical character recognition, cleans up the text, and matches it against a comprehensive library database to identify the books.
+Spinecat is an intelligent system that automatically identifies books from photographs of book spines. It uses a custom-trained computer vision to detect book spines, extracts text using OCR, cleans up the text, and matches it against a comprehensive library database using a custom matching algorithm to identify the books.
+
+This project is meant to be run on localhost or otherwise hosted as a website.
 
 ## What This System Does
 
