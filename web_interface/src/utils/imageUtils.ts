@@ -138,19 +138,4 @@ function calculateBlurScore(imageData: ImageData): number {
   return normalizedScore;
 }
 
-/**
- * Process image through the Spinecat pipeline
- * This will be replaced with actual pipeline integration
- */
-export async function processImage(file: File): Promise<any> {
-  // TODO: Integrate with actual pipeline
-  // For now, return a promise that resolves after a delay
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      resolve({
-        success: true,
-        message: 'Image processed successfully'
-      });
-    }, 2000);
-  });
-}
+

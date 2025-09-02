@@ -6,14 +6,13 @@ Pillow>=10.0.0
 # YOLO Model
 ultralytics>=8.0.0
 
-# Google Vision API
-google-cloud-vision>=3.4.0
+# EasyOCR
+easyocr>=1.7.0
+Pillow>=10.0.0
 
 # Text Processing & ML
 nltk>=3.8.0
 scikit-learn>=1.3.0
-sentence-transformers>=2.2.0
-faiss-cpu>=1.7.0
 
 # Fuzzy Matching
 rapidfuzz>=3.0.0
@@ -32,6 +31,4 @@ pytest>=7.4.0
 black>=23.0.0
 mypy>=1.5.0
 
-# Optional: GPU acceleration for sentence transformers
-# torch>=2.0.0
-# faiss-gpu>=1.7.0
+

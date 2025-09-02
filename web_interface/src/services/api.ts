@@ -17,23 +17,23 @@ export class ApiService {
    */
   async testConnection(): Promise<{ status: string; filename: string; size: number }> {
     try {
-      console.log('🧪 API: Testing connection...');
+      console.log('API: Testing connection...');
       const response = await fetch(`${this.baseUrl}/api/test`, {
         method: 'POST',
         body: new FormData()
       });
       
-      console.log('🧪 API: Test response:', response.status, response.statusText);
+      console.log('API: Test response:', response.status, response.statusText);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       
       const result = await response.json();
-      console.log('🧪 API: Test result:', result);
+      console.log('API: Test result:', result);
       return result;
     } catch (error) {
-      console.error('❌ API: Connection test failed:', error);
+      console.error('API: Connection test failed:', error);
       throw error;
     }
   }
@@ -43,14 +43,14 @@ export class ApiService {
    */
   async startProcess(file: File): Promise<{ task_id: string }> {
     try {
-      console.log('🚀 API: Starting processImage...');
-      console.log('🚀 API: baseUrl:', this.baseUrl);
-      console.log('🚀 API: file:', file.name, file.size, file.type);
+      console.log('API: Starting processImage...');
+      console.log('API: baseUrl:', this.baseUrl);
+      console.log('API: file:', file.name, file.size, file.type);
       
       const formData = new FormData();
       formData.append('file', file);
       
-      console.log('🚀 API: Making fetch request to:', `${this.baseUrl}/api/process-image`);
+      console.log('API: Making fetch request to:', `${this.baseUrl}/api/process-image`);
       
       const response = await fetch(`${this.baseUrl}/api/process-image`, {
         method: 'POST',
@@ -62,10 +62,10 @@ export class ApiService {
       }
       
       const result = await response.json();
-      console.log('✅ API: Process started successfully:', result);
+      console.log('API: Process started successfully:', result);
       return result;
     } catch (error) {
-      console.error('❌ API: Failed to start process:', error);
+      console.error('API: Failed to start process:', error);
       throw error;
     }
   }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, BookOpen, CheckCircle, Search, Loader2 } from 'lucide-react';
 
@@ -9,6 +9,7 @@ interface AlternativesModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentBook: BookMatch;
+  taskId: string | null;  // Add task ID for fast alternatives lookup
   onBookSwitched: (newBook: BookMatch) => void;
   onScrollToBook?: (bookTitle: string) => void;
 }
@@ -23,6 +24,7 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
   isOpen,
   onClose,
   currentBook,
+  taskId,
   onBookSwitched,
   onScrollToBook
 }) => {
@@ -75,38 +77,43 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
   useEffect(() => {
     if (isOpen && currentBook) {
       const loadAlternatives = async () => {
+        let searchText: string;
+        if (!currentBook.ocr_text || currentBook.ocr_text.trim() === '') {
+          // Use the book title as a fallback for search
+          searchText = currentBook.title;
+        } else {
+          searchText = currentBook.ocr_text;
+        }
+        
         setIsLoading(true);
         try {
-          // Use the actual backend pipeline to get alternatives with real scores
-          // This ensures we get the same scoring and matching logic as the initial processing
-          const response = await fetch(`${apiService.getBaseUrl()}/api/alternatives?ocr_text=${encodeURIComponent(currentBook.ocr_text)}&limit=10`);
+          let url: string;
+          
+          // Use fast endpoint if we have taskId, otherwise fall back to slow endpoint
+          if (taskId && currentBook.spine_region_id) {
+            url = `${apiService.getBaseUrl()}/api/alternatives-by-spine?task_id=${encodeURIComponent(taskId)}&spine_id=${encodeURIComponent(currentBook.spine_region_id)}&limit=10`;
+          } else {
+            url = `${apiService.getBaseUrl()}/api/alternatives?ocr_text=${encodeURIComponent(searchText)}&limit=10`;
+          }
+          
+          const response = await fetch(url);
           
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
           
           const data = await response.json();
-          console.log('🔍 Raw response from alternatives API:', data);
           
           if (!data.success || !Array.isArray(data.results)) {
-            console.warn('Alternatives API returned invalid data:', data);
-            console.warn('data.success:', data.success);
-            console.warn('data.results type:', typeof data.results);
-            console.warn('data.results is array:', Array.isArray(data.results));
             setAlternatives([]);
             return;
           }
           
-          console.log('🔍 Data validation passed, processing', data.results.length, 'results');
-          
           // Convert backend results to alternative matches with REAL scores
           const alternativesList: AlternativeMatch[] = data.results
-            .map((book: any, index: number) => {
-              console.log(`🔍 Processing book ${index}:`, book);
-              
+            .map((book: any) => {
               // Ensure book has required properties
               if (!book || typeof book.title !== 'string') {
-                console.warn('Invalid book data:', book);
                 return null;
               }
               
@@ -115,7 +122,7 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
                 book: {
                   key: book.key,
                   title: book.title,
-                  author_name: book.author_name,
+                  author_name: Array.isArray(book.author_name) ? book.author_name : [book.author_name],
                   first_publish_year: book.first_publish_year,
                   publisher: book.publisher
                 },
@@ -123,7 +130,6 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
                 match_type: book.match_type    // REAL type from backend
               };
               
-              console.log(`🔍 Created alternative ${index}:`, alternative);
               return alternative;
             })
             .filter((item: any): item is AlternativeMatch => {
@@ -134,18 +140,15 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
               const alternativeTitle = item.book.title.toLowerCase();
               
               if (currentTitle === alternativeTitle) {
-                console.log(`🔍 Filtering out exact duplicate: ${alternativeTitle}`);
                 return false;
               }
               
-              console.log(`🔍 Keeping alternative: ${alternativeTitle}`);
               return true;
             });
           
           // Sort by match score (highest first) - using REAL scores
           alternativesList.sort((a, b) => b.match_score - a.match_score);
           
-          console.log('Loaded alternatives with REAL backend scores:', alternativesList);
           setAlternatives(alternativesList);
         } catch (error) {
           console.error('Failed to load alternatives:', error);
@@ -157,7 +160,7 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
       
       loadAlternatives();
     }
-  }, [isOpen, currentBook]);
+  }, [isOpen, currentBook, taskId]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -217,13 +220,12 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
       ocr_text: currentBook.ocr_text
     };
     
-    console.log('Switching to book:', alternative.book.title, 'with score:', alternative.match_score);
     onBookSwitched(newBook);
     onClose();
   };
 
   // Scroll to a specific book in the alternatives list
-  const scrollToBook = (bookTitle: string) => {
+  const scrollToBook = useCallback((bookTitle: string) => {
     if (!alternativesRef.current) return;
     
     const alternativesContainer = alternativesRef.current;
@@ -248,7 +250,7 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
     if (onScrollToBook) {
       onScrollToBook(bookTitle);
     }
-  };
+  }, [onScrollToBook]);
 
   // Auto-scroll to current book when alternatives load
   useEffect(() => {
@@ -258,12 +260,12 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
         scrollToBook(currentBook.title);
       }, 100);
     }
-  }, [alternatives, currentBook]);
+  }, [alternatives, currentBook, scrollToBook]);
 
   // Expose scroll function to parent component
-  const scrollToBookByTitle = (bookTitle: string) => {
+  const scrollToBookByTitle = useCallback((bookTitle: string) => {
     scrollToBook(bookTitle);
-  };
+  }, [scrollToBook]);
 
   // Make function available globally for parent component access
   useEffect(() => {
@@ -271,7 +273,7 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
     return () => {
       delete (window as any).scrollToBookInAlternativesModal;
     };
-  }, []);
+  }, [scrollToBookByTitle]);
 
   const getMatchTypeColor = (matchType: string) => {
     switch (matchType) {
@@ -412,9 +414,6 @@ const AlternativesModal: React.FC<AlternativesModalProps> = ({
                       <h3 className="text-lg font-semibold text-white mb-4 sticky top-0 bg-slate-900 py-2 z-10">
                         Alternative Matches ({alternatives.length})
                       </h3>
-                      <p className="text-xs text-slate-400 mb-4">
-                        Using actual backend pipeline scores. Percentages show real match confidence from the matching algorithm.
-                      </p>
                       
                       {alternatives.length === 0 ? (
                         <div className="text-center py-8 text-slate-400">

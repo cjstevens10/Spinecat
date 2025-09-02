@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 class SpinecatConfig:
     """Configuration for Spinecat pipeline"""
     
-    # API Keys
-    google_vision_api_key: str
+    # OCR Configuration
+    easyocr_enabled: bool = True
     
     # Model paths
     yolo_model_path: str = "models/yolo-spine-obb-final2/weights/best.pt"
@@ -24,15 +24,9 @@ class SpinecatConfig:
     min_text_length: int = 3
     confidence_threshold: float = 0.5
     
-    # Matching Configuration
-    use_advanced_matching: bool = True  # Use new character n-gram matching
-    use_legacy_matching: bool = False   # Use old fuzzy matching as fallback
+    # Advanced Matching Configuration
     advanced_matching_confidence_threshold: float = 0.65
     advanced_matching_top_k: int = 10
-    
-    # Legacy matching settings (kept for compatibility)
-    confidence_threshold: float = 0.5
-    match_confidence_threshold: float = 0.3
     
     # Open Library settings
     open_library_rate_limit: float = 0.1  # seconds between requests
@@ -51,7 +45,7 @@ class SpinecatConfig:
             load_dotenv(env_file)
         
         return cls(
-            google_vision_api_key=os.getenv("GOOGLE_VISION_API_KEY", "YOUR_API_KEY_HERE"),
+            easyocr_enabled=os.getenv("EASYOCR_ENABLED", "true").lower() == "true",
             yolo_model_path=os.getenv("YOLO_MODEL_PATH", "models/yolo-spine-obb-final2/weights/best.pt"),
             padding_pixels=int(os.getenv("PADDING_PIXELS", "25")),
             angle_tolerance=float(os.getenv("ANGLE_TOLERANCE", "5.0")),
@@ -93,9 +87,9 @@ class SpinecatConfig:
         """Validate configuration"""
         errors = []
         
-        # Check required fields
-        if not self.google_vision_api_key or self.google_vision_api_key == "YOUR_API_KEY_HERE":
-            errors.append("Google Vision API key not configured")
+        # Check OCR configuration
+        if not self.easyocr_enabled:
+            errors.append("EasyOCR is disabled")
         
         # Check model path
         if not Path(self.yolo_model_path).exists():
@@ -143,8 +137,8 @@ def create_env_template(env_path: str = ".env.example"):
     env_template = """# Spinecat Configuration
 # Copy this file to .env and fill in your actual values
 
-# Required: Google Vision API Key
-GOOGLE_VISION_API_KEY=YOUR_API_KEY_HERE
+        # Required: EasyOCR Configuration
+        EASYOCR_ENABLED=true
 
 # Optional: Model and processing settings
 YOLO_MODEL_PATH=models/yolo-spine-obb-final2/weights/best.pt

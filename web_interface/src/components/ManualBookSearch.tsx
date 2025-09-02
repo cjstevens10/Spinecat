@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Search, BookOpen, Loader2, X, Filter, Bookmark } from 'lucide-react';
+import { Search, BookOpen, Loader2, X, Bookmark } from 'lucide-react';
 import { OpenLibraryBook } from '../types';
 import { apiService } from '../services/api';
 
@@ -36,7 +36,7 @@ const ManualBookSearch: React.FC<ManualBookSearchProps> = ({
     author: '',
     publisher: ''
   });
-  const [showFilters, setShowFilters] = useState(false);
+
 
   const handleBasicSearch = async () => {
     if (!searchQuery.trim()) return;

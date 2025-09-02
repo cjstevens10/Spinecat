@@ -1,5 +1,5 @@
 """
-OCR processor for book spines using Google Vision API
+OCR processor for book spines using Tesseract OCR
 Handles multi-angle OCR and text extraction
 """
 
@@ -10,7 +10,7 @@ from typing import List, Dict, Tuple
 from dataclasses import dataclass
 
 from .models import OCRResult, SpineTextData
-from .google_vision_ocr import GoogleVisionOCR
+from .easyocr_ocr import EasyOCREngine
 
 logger = logging.getLogger(__name__)
 
@@ -23,17 +23,17 @@ class OCRProcessorConfig:
     confidence_threshold: float = 0.5
 
 class MultiAngleOCRProcessor:
-    """Handles multi-angle OCR for book spines with mixed orientations using Google Vision"""
+    """Handles multi-angle OCR for book spines with mixed orientations using EasyOCR"""
     
-    # Class-level Google Vision instance to avoid reloading
+    # Class-level EasyOCR instance to avoid reloading
     _ocr_instance = None
     
-    def __init__(self, api_key: str, config: OCRProcessorConfig = None):
-        """Initialize Google Vision OCR with appropriate settings"""
+    def __init__(self, easyocr_enabled: str = "easyocr_enabled", config: OCRProcessorConfig = None):
+        """Initialize EasyOCR with appropriate settings"""
         self.config = config or OCRProcessorConfig()
         
         if MultiAngleOCRProcessor._ocr_instance is None:
-            MultiAngleOCRProcessor._ocr_instance = GoogleVisionOCR(api_key=api_key)
+            MultiAngleOCRProcessor._ocr_instance = EasyOCREngine()
         
         self.ocr = MultiAngleOCRProcessor._ocr_instance
     
@@ -88,9 +88,12 @@ class MultiAngleOCRProcessor:
             rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
             rotated_image = cv2.warpAffine(image, rotation_matrix, (width, height))
         
-        # Run Google Vision OCR
+        # Run EasyOCR
         try:
             result = self.ocr.detect_text_advanced(rotated_image)
+            
+            # Debug logging
+            logger.info(f"EasyOCR result: {result}")
             
             if result and result.get('success'):
                 blocks = result.get('blocks', [])
@@ -103,7 +106,9 @@ class MultiAngleOCRProcessor:
                         block_text = block['text'].strip()
                         if block_text and len(block_text) > self.config.min_text_length:
                             all_texts.append(block_text)
-                            all_confidences.append(0.95)
+                            # Use actual confidence from EasyOCR result
+                            block_confidence = result.get('confidence', 0.8)
+                            all_confidences.append(block_confidence)
                 
                 # If we found valid text blocks, combine them
                 if all_texts:
@@ -136,7 +141,7 @@ class MultiAngleOCRProcessor:
             )
             
         except Exception as e:
-            logger.warning(f"⚠️  OCR error at angle {angle}: {e}")
+            logger.warning(f"OCR error at angle {angle}: {e}")
             return OCRResult(
                 text="",
                 confidence=0.0,
@@ -229,7 +234,7 @@ class MultiAngleOCRProcessor:
         
         return spine_data
 
-def create_ocr_processor(api_key: str, config: OCRProcessorConfig = None) -> MultiAngleOCRProcessor:
+def create_ocr_processor(easyocr_enabled: str = "easyocr_enabled", config: OCRProcessorConfig = None) -> MultiAngleOCRProcessor:
     """Factory function to create an OCR processor instance"""
-    return MultiAngleOCRProcessor(api_key, config)
+    return MultiAngleOCRProcessor(easyocr_enabled, config)
 

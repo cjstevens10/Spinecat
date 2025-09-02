@@ -18,7 +18,6 @@ from .models import (
 from .denoising import TextDenoiser
 from .open_library import OpenLibraryClient, OpenLibraryBookMapper
 
-from .matching import BookMatcher
 from .matching_v2 import AdvancedBookMatcher, create_advanced_book_matcher
 from .ocr_processor import MultiAngleOCRProcessor
 
@@ -29,34 +28,27 @@ class SpinecatPipeline:
     
     def __init__(self, 
                  yolo_model_path: str,
-                 google_vision_api_key: str,
-                 use_semantic_matching: bool = True,
-                 use_advanced_matching: bool = True):
+                 google_vision_api_key: str):
         """
         Initialize the pipeline
         
         Args:
             yolo_model_path: Path to trained YOLO model
             google_vision_api_key: Google Vision API key
-            use_semantic_matching: Whether to use semantic matching (legacy)
-            use_advanced_matching: Whether to use new character n-gram matching
         """
         self.yolo_model_path = yolo_model_path
         self.google_vision_api_key = google_vision_api_key
-        self.use_advanced_matching = use_advanced_matching
         
         # Initialize components
         self.yolo_model = None
         self.ocr_processor = None
         self.denoiser = None
         self.library_client = None
-
-        self.book_matcher = None
         self.advanced_book_matcher = None
         
-        self._initialize_components(use_semantic_matching)
+        self._initialize_components()
     
-    def _initialize_components(self, use_semantic_matching: bool):
+    def _initialize_components(self):
         """Initialize all pipeline components"""
         try:
             # Load YOLO model
@@ -65,8 +57,8 @@ class SpinecatPipeline:
             logger.info("YOLO model loaded successfully")
             
             # Initialize OCR processor
-            logger.info("Initializing Google Vision OCR processor")
-            self.ocr_processor = MultiAngleOCRProcessor(self.google_vision_api_key)
+            logger.info("Initializing EasyOCR processor")
+            self.ocr_processor = MultiAngleOCRProcessor("easyocr_enabled")
             
             # Initialize text denoiser
             logger.info("Initializing text denoiser")
@@ -76,16 +68,9 @@ class SpinecatPipeline:
             logger.info("Initializing Open Library client")
             self.library_client = OpenLibraryClient()
             
-                    # Initialize book matcher
-            logger.info("Initializing book matcher")
-            self.book_matcher = BookMatcher(use_semantic_matching=use_semantic_matching)
-            
-            # Initialize advanced book matcher if enabled
-            if self.use_advanced_matching:
-                logger.info("Initializing advanced book matcher (character n-gram)")
-                self.advanced_book_matcher = create_advanced_book_matcher(use_character_ngrams=True)
-            else:
-                logger.info("Advanced book matcher disabled, using legacy matching")
+            # Initialize advanced book matcher
+            logger.info("Initializing advanced book matcher (character n-gram)")
+            self.advanced_book_matcher = create_advanced_book_matcher(use_character_ngrams=True)
             
             logger.info("All pipeline components initialized successfully")
             
@@ -310,91 +295,38 @@ class SpinecatPipeline:
             # Get denoised text or fall back to OCR text
             search_text = denoised_text.denoised_text if denoised_text else ocr_text
             
-            # Use advanced matching if available and enabled
-            if self.use_advanced_matching and self.advanced_book_matcher:
-                logger.info("Using advanced character n-gram matching")
-                
-                # Fit the advanced matcher to the current library books
-                self.advanced_book_matcher.fit(library_books)
-                
-                # Get matches using advanced matching
-                matches = self.advanced_book_matcher.match_books(
-                    ocr_text=search_text,
-                    top_k=5,
-                    confidence_threshold=0.65
-                )
-                
-                # Convert to BookMatch objects
-                book_matches = []
-                for book, match_score in matches:
-                    book_match = BookMatch(
-                        ocr_text=ocr_text,
-                        denoised_text=search_text,
-                        library_book=OpenLibraryBook(**book),
-                        match_score=match_score.score,
-                        match_type=match_score.match_type,
-                        confidence=match_score.confidence
-                    )
-                    book_matches.append(book_match)
-                
-                logger.info(f"Advanced matching found {len(book_matches)} matches")
-                return book_matches
+            # Use advanced character n-gram matching
+            logger.info("Using advanced character n-gram matching")
             
-            else:
-                # Fall back to legacy matching
-                logger.info("Using legacy fuzzy matching")
-                matches = self.book_matcher.match_books(
+            # Fit the advanced matcher to the current library books
+            self.advanced_book_matcher.fit(library_books)
+            
+            # Get matches using advanced matching
+            matches = self.advanced_book_matcher.match_books(
+                ocr_text=search_text,
+                top_k=5,
+                confidence_threshold=0.65
+            )
+            
+            # Convert to BookMatch objects
+            book_matches = []
+            for book, match_score in matches:
+                book_match = BookMatch(
                     ocr_text=ocr_text,
                     denoised_text=search_text,
-                    library_books=library_books,
-                    top_k=5
+                    library_book=OpenLibraryBook(**book),
+                    match_score=match_score.score,
+                    match_type=match_score.match_type,
+                    confidence=match_score.confidence
                 )
-                
-                # Convert to BookMatch objects
-                book_matches = []
-                for book, match_score in matches:
-                    book_match = BookMatch(
-                        ocr_text=ocr_text,
-                        denoised_text=search_text,
-                        library_book=OpenLibraryBook(**book),
-                        match_score=match_score.score,
-                        match_type=match_score.match_type,
-                        confidence=match_score.confidence
-                    )
-                    book_matches.append(book_match)
-                
-                logger.info(f"Legacy matching found {len(book_matches)} matches")
-                return book_matches
+                book_matches.append(book_match)
+            
+            logger.info(f"Advanced matching found {len(book_matches)} matches")
+            return book_matches
             
         except Exception as e:
-            logger.error(f"Book matching failed: {e}")
-            # Try to fall back to legacy matching if advanced matching failed
-            try:
-                logger.info("Falling back to legacy matching after advanced matching error")
-                matches = self.book_matcher.match_books(
-                    ocr_text=ocr_text,
-                    denoised_text=search_text,
-                    library_books=library_books,
-                    top_k=5
-                )
-                
-                book_matches = []
-                for book, match_score in matches:
-                    book_match = BookMatch(
-                        ocr_text=ocr_text,
-                        denoised_text=search_text,
-                        library_book=OpenLibraryBook(**book),
-                        match_score=match_score.score,
-                        match_type=match_score.match_type,
-                        confidence=match_score.confidence
-                    )
-                    book_matches.append(book_match)
-                
-                return book_matches
-                
-            except Exception as fallback_error:
-                logger.error(f"Legacy matching fallback also failed: {fallback_error}")
-                return []
+            logger.error(f"Advanced matching failed: {e}")
+            return []
     
     def get_alternatives(self, ocr_text: str, top_k: int = 10) -> List[tuple]:
         """
@@ -413,8 +345,10 @@ class SpinecatPipeline:
             logger.info(f"Searching for library books with OCR text: '{ocr_text}'")
             
             # Use flexible search for OCR text (handles jumbled/incomplete text better)
-            library_books = self.library_client.search_flexible(ocr_text, limit=100)
-            logger.info(f"Found {len(library_books) if library_books else 0} library books")
+            # Reduce limit for better performance - we only need top_k results anyway
+            search_limit = min(50, top_k * 3)  # Get 3x more than needed for better matching
+            library_books = self.library_client.search_flexible(ocr_text, limit=search_limit)
+            logger.info(f"Found {len(library_books) if library_books else 0} library books (search limit: {search_limit})")
             
             if library_books:
                 logger.info(f"Sample book titles: {[book.get('title', 'Unknown')[:50] for book in library_books[:3]]}")
@@ -423,39 +357,25 @@ class SpinecatPipeline:
                 logger.warning(f"No library books found for OCR text: {ocr_text}")
                 return []
             
-            # Use advanced matching if available and enabled
-            if self.use_advanced_matching and self.advanced_book_matcher:
-                logger.info("Using advanced character n-gram matching for alternatives")
-                
-                # Fit the advanced matcher to the current library books
-                logger.info(f"Fitting advanced matcher to {len(library_books)} library books")
-                self.advanced_book_matcher.fit(library_books)
-                
-                # Get matches using advanced matching
-                logger.info(f"Running advanced matching with threshold 0.0")
-                matches = self.advanced_book_matcher.match_books(
-                    ocr_text=ocr_text,
-                    top_k=top_k,
-                    confidence_threshold=0.0  # Lower threshold to get more alternatives
-                )
-                
-                logger.info(f"Advanced matching found {len(matches)} alternatives")
-                if matches:
-                    logger.info(f"Sample match scores: {[f'{m[1].score:.3f}' for m in matches[:3]]}")
-                return matches
+            # Use advanced character n-gram matching for alternatives
+            logger.info("Using advanced character n-gram matching for alternatives")
             
-            else:
-                # Fall back to legacy matching
-                logger.info("Using legacy fuzzy matching for alternatives")
-                matches = self.book_matcher.match_books(
-                    ocr_text=ocr_text,
-                    denoised_text=None,  # No denoising for alternatives
-                    library_books=library_books,
-                    top_k=top_k
-                )
-                
-                logger.info(f"Legacy matching found {len(matches)} alternatives")
-                return matches
+            # Fit the advanced matcher to the current library books
+            logger.info(f"Fitting advanced matcher to {len(library_books)} library books")
+            self.advanced_book_matcher.fit(library_books)
+            
+            # Get matches using advanced matching
+            logger.info(f"Running advanced matching with threshold 0.0")
+            matches = self.advanced_book_matcher.match_books(
+                ocr_text=ocr_text,
+                top_k=top_k,
+                confidence_threshold=0.0  # Lower threshold to get more alternatives
+            )
+            
+            logger.info(f"Advanced matching found {len(matches)} alternatives")
+            if matches:
+                logger.info(f"Sample match scores: {[f'{m[1].score:.3f}' for m in matches[:3]]}")
+            return matches
             
         except Exception as e:
             logger.error(f"Failed to get alternatives: {e}")
@@ -488,7 +408,7 @@ class SpinecatPipeline:
         logger.info(f"Saved {len(saved_files)} results to {output_dir}")
         return saved_files
 
-def create_pipeline(yolo_model_path: str, google_vision_api_key: str, use_semantic_matching: bool = True, use_advanced_matching: bool = True) -> SpinecatPipeline:
+def create_pipeline(yolo_model_path: str, google_vision_api_key: str) -> SpinecatPipeline:
     """Factory function to create a SpinecatPipeline instance"""
-    return SpinecatPipeline(yolo_model_path, google_vision_api_key, use_semantic_matching, use_advanced_matching)
+    return SpinecatPipeline(yolo_model_path, google_vision_api_key)
 

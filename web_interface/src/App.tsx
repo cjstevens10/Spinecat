@@ -1,7 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Toaster } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Settings, Download } from 'lucide-react';
 
 import { ProcessingState, ProcessingResult } from './types';
 import { apiService } from './services/api';
@@ -24,21 +23,17 @@ const App: React.FC = () => {
   const [isFinalized, setIsFinalized] = useState(false);
   
   // Function to scroll to book when spine is clicked
-  const handleSpineSelected = (spineId: string) => {
-    console.log('🎯 Spine clicked:', spineId);
+  const handleSpineSelected = useCallback((spineId: string) => {
     setSelectedSpineId(spineId);
     
     // Find the corresponding book and scroll to it
     if (processingResult) {
       const book = processingResult.book_matches.find(b => b.spine_region_id === spineId);
-      console.log('🔍 Found book for spine:', book);
       if (book) {
         // Small delay to ensure DOM is updated
         setTimeout(() => {
           const bookElement = document.querySelector(`[data-book-id="${book.id}"]`);
-          console.log('🔍 Looking for book element:', book.id, bookElement);
           if (bookElement) {
-            console.log('✅ Scrolling to book:', book.title);
             bookElement.scrollIntoView({ 
               behavior: 'smooth', 
               block: 'center',
@@ -50,15 +45,11 @@ const App: React.FC = () => {
             setTimeout(() => {
               bookElement.classList.remove('ring-2', 'ring-blue-400', 'ring-opacity-75');
             }, 2000);
-          } else {
-            console.warn('❌ Book element not found for ID:', book.id);
           }
         }, 100);
-      } else {
-        console.warn('❌ No book found for spine ID:', spineId);
       }
     }
-  };
+  }, [processingResult]);
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);
   const [isManualSearchOpen, setIsManualSearchOpen] = useState(false);
   const [editingBookId, setEditingBookId] = useState<string | null>(null);
@@ -68,11 +59,9 @@ const App: React.FC = () => {
     let intervalId: NodeJS.Timeout;
     
     if (processingState.status === 'processing' && currentTaskId) {
-      console.log('🔄 App: Starting progress polling for task:', currentTaskId);
       intervalId = setInterval(async () => {
         try {
           const data = await apiService.getProgress(currentTaskId);
-          console.log('📡 App: Polled progress:', data);
           
           setProcessingState(prev => ({
             ...prev,
@@ -85,17 +74,6 @@ const App: React.FC = () => {
           if (data.status === 'completed') {
             try {
               const result = await apiService.getResult(currentTaskId);
-              console.log('✅ App: Got result:', result);
-              console.log('🔍 App: Result structure:', {
-                total_spines: result.total_spines,
-                successful_matches: result.successful_matches,
-                book_matches_length: result.book_matches?.length,
-                spine_regions_length: result.spine_regions?.length,
-                ocr_failures_length: result.ocr_failures?.length
-              });
-              if (result.book_matches && result.book_matches.length > 0) {
-                console.log('🔍 App: First book match:', result.book_matches[0]);
-              }
               setProcessingResult(result);
               setProcessingState(prev => ({
                 ...prev,
@@ -104,7 +82,7 @@ const App: React.FC = () => {
                 message: `Processed ${result.total_spines} spines with ${result.successful_matches} successful matches`
               }));
             } catch (error) {
-              console.error('❌ App: Failed to get result:', error);
+              console.error('Failed to get result:', error);
               setProcessingState(prev => ({
                 ...prev,
                 status: 'error',
@@ -114,29 +92,21 @@ const App: React.FC = () => {
           }
           
         } catch (error) {
-          console.error('❌ App: Failed to poll progress:', error);
+          console.error('Failed to poll progress:', error);
         }
       }, 200); // Poll every 200ms
     }
 
     return () => {
       if (intervalId) {
-        console.log('🔄 App: Stopping progress polling...');
         clearInterval(intervalId);
       }
     };
   }, [processingState.status, currentTaskId]);
 
-  const handleImageProcessed = (result: ProcessingResult) => {
-    setProcessingResult(result);
-    setProcessingState({
-      status: 'completed',
-      progress: 100,
-      message: `Processed ${result.total_spines} spines with ${result.successful_matches} successful matches`
-    });
-  };
 
-  const handleImageUpload = async (file: File) => {
+
+  const handleImageUpload = useCallback(async (file: File) => {
     try {
       setProcessingState({
         status: 'processing',
@@ -147,19 +117,18 @@ const App: React.FC = () => {
       // Start the processing task
       const { task_id } = await apiService.startProcess(file);
       setCurrentTaskId(task_id);
-      console.log('🚀 App: Started task:', task_id);
 
     } catch (error) {
-      console.error('❌ App: Failed to start processing:', error);
+      console.error('Failed to start processing:', error);
       setProcessingState({
         status: 'error',
         progress: 0,
         message: `Failed to start processing: ${error instanceof Error ? error.message : 'Unknown error'}`
       });
     }
-  };
+  }, []);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setProcessingState({
       status: 'idle',
       progress: 0,
@@ -169,7 +138,7 @@ const App: React.FC = () => {
     setSelectedSpineId(null);
     setIsFinalized(false);
     setCurrentTaskId(null);
-  };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
@@ -182,15 +151,7 @@ const App: React.FC = () => {
             <h1 className="text-xl font-semibold text-slate-200">
               Book Spine Analyzer
             </h1>
-            <div className="flex items-center space-x-4">
-              <button
-                onClick={() => window.open('http://127.0.0.1:8002/docs', '_blank')}
-                className="flex items-center space-x-2 px-3 py-2 text-sm text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-md transition-colors"
-              >
-                <Settings className="w-4 h-4" />
-                <span>API Docs</span>
-              </button>
-            </div>
+
           </div>
         </div>
       </header>
@@ -291,6 +252,7 @@ const App: React.FC = () => {
                       bookMatches={processingResult.book_matches}
                       ocrFailures={processingResult.ocr_failures}
                       selectedSpineId={selectedSpineId}
+                      taskId={currentTaskId}
                       onSpineSelected={handleSpineSelected}
                       onBookListUpdated={(updatedMatches) => {
                         setProcessingResult(prev => prev ? {
@@ -303,13 +265,9 @@ const App: React.FC = () => {
                         } : null);
                       }}
                       onStartEditing={(bookId) => {
-                        console.log('🔄 Starting edit for book:', bookId);
-                        console.log('🔄 Current editingBookId before set:', editingBookId);
                         if (editingBookId === bookId) {
-                          console.log('🔄 Book is already in editing mode, toggling off');
                           setEditingBookId(null);
                         } else {
-                          console.log('🔄 Setting editingBookId to:', bookId);
                           setEditingBookId(bookId);
                         }
                       }}
@@ -359,9 +317,7 @@ const App: React.FC = () => {
         isOpen={isManualSearchOpen}
         onClose={() => setIsManualSearchOpen(false)}
         onBookSelected={(book) => {
-          console.log('Selected book from manual search:', book);
-          // You can add logic here to handle the selected book
-          // For example, add it to a list or replace a failed match
+          // Handle selected book from manual search
         }}
       />
     </div>

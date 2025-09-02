@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Download, FileText, Image as ImageIcon, RotateCcw, CheckCircle } from 'lucide-react';
+import { FileSpreadsheet, CheckCircle } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 import { ProcessingResult } from '../types';
 
@@ -13,7 +14,6 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
   processingResult,
   onUnfinalize
 }) => {
-  const [exportFormat, setExportFormat] = useState<'png' | 'jpg' | 'pdf'>('png');
   const [includeMetadata, setIncludeMetadata] = useState(true);
   const [includeOCRText, setIncludeOCRText] = useState(false);
   const [includeConfidenceScores, setIncludeConfidenceScores] = useState(true);
@@ -43,24 +43,85 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
   const successRate = totalSpines > 0 ? (successfulMatches / totalSpines) * 100 : 0;
   const perfectRate = successfulMatches > 0 ? (perfectMatches / successfulMatches) * 100 : 0;
 
-  // Handle export
+  // Handle Excel export
   const handleExport = async () => {
     setIsExporting(true);
     
     try {
-      // TODO: Implement actual export functionality
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate export
-      
-      // For now, just show success message
-      console.log('Export completed:', {
-        format: exportFormat,
-        includeMetadata,
-        includeOCRText,
-        includeConfidenceScores
+      // Prepare data for Excel export
+      const exportData = processingResult.book_matches.map((book, index) => {
+        const row: any = {
+          'Spine #': index + 1,
+          'Title': book.title || 'Unknown Title',
+          'Author(s)': Array.isArray(book.author_name) ? book.author_name.join(', ') : book.author_name || 'Unknown Author',
+          'Publication Year': book.first_publish_year || 'Unknown',
+          'Match Type': book.match_type || 'Unknown',
+          'Open Library ID': book.open_library_id || 'N/A'
+        };
+
+        // Add optional fields based on user preferences
+        if (includeOCRText) {
+          row['OCR Text'] = book.ocr_text || 'N/A';
+        }
+        
+        if (includeConfidenceScores) {
+          row['Confidence'] = book.confidence ? `${Math.round(book.confidence * 100)}%` : 'N/A';
+        }
+
+        return row;
       });
+
+      // Add metadata row if requested
+      if (includeMetadata) {
+        const metadataRow = {
+          'Spine #': 'METADATA',
+          'Title': `Processing completed on ${new Date().toLocaleString()}`,
+          'Author(s)': `Total spines: ${totalSpines}`,
+          'Publication Year': `Successful matches: ${successfulMatches}`,
+          'Match Type': `Success rate: ${successRate.toFixed(1)}%`,
+          'Open Library ID': `Processing time: ${processingResult.processing_time.toFixed(1)}s`
+        };
+        exportData.unshift(metadataRow);
+      }
+
+      // Create workbook and worksheet
+      const workbook = XLSX.utils.book_new();
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+
+      // Set column widths for better readability
+      const columnWidths = [
+        { wch: 8 },   // Spine #
+        { wch: 30 },  // Title
+        { wch: 25 },  // Author(s)
+        { wch: 15 },  // Publication Year
+        { wch: 12 },  // Match Type
+        { wch: 20 }   // Open Library ID
+      ];
+
+      // Add OCR Text and Confidence columns if included
+      if (includeOCRText) {
+        columnWidths.push({ wch: 25 }); // OCR Text
+      }
+      if (includeConfidenceScores) {
+        columnWidths.push({ wch: 12 }); // Confidence
+      }
+
+      worksheet['!cols'] = columnWidths;
+
+      // Add worksheet to workbook
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Book List');
+
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().slice(0, 19).replace(/:/g, '-');
+      const filename = `spinecat-books-${timestamp}.xlsx`;
+
+      // Write and download the file
+      XLSX.writeFile(workbook, filename);
+      
+      console.log('Excel export completed:', filename);
       
     } catch (error) {
-      console.error('Export failed:', error);
+      console.error('Excel export failed:', error);
     } finally {
       setIsExporting(false);
     }
@@ -74,23 +135,15 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
       className="card"
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="mb-6">
         <div>
-          <h3 className="text-xl font-semibold text-gray-500">
+          <h3 className="text-xl font-semibold text-gray-300">
             Finalize & Export
           </h3>
-          <p className="text-gray-400 mt-1">
-            Review your results and generate the final labeled image
+          <p className="text-gray-300 mt-1">
+            Review your results and export the book list to Excel
           </p>
         </div>
-        
-        <button
-          onClick={onUnfinalize}
-          className="btn-secondary flex items-center space-x-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          <span>Continue Editing</span>
-        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -98,65 +151,65 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
         <div className="space-y-6">
           {/* Summary Statistics */}
           <div className="bg-gray-50 rounded-lg p-4">
-            <h4 className="font-medium text-gray-500 mb-3">Processing Summary</h4>
+            <h4 className="font-medium text-gray-700 mb-3">Processing Summary</h4>
             
             <div className="grid grid-cols-2 gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary-600">
+                <div className="text-2xl font-bold text-gray-900">
                   {totalSpines}
                 </div>
-                <div className="text-sm text-gray-400">Total Spines</div>
+                <div className="text-sm text-gray-900 font-medium">Total Spines</div>
               </div>
               
               <div className="text-center">
-                <div className="text-2xl font-bold text-success-600">
+                <div className="text-2xl font-bold text-gray-900">
                   {successfulMatches}
                 </div>
-                <div className="text-sm text-gray-400">Successful Matches</div>
+                <div className="text-sm text-gray-900 font-medium">Successful Matches</div>
               </div>
               
               <div className="text-center">
-                <div className="text-2xl font-bold text-primary-600">
+                <div className="text-2xl font-bold text-gray-900">
                   {successRate.toFixed(1)}%
                 </div>
-                <div className="text-sm text-gray-400">Success Rate</div>
+                <div className="text-sm text-gray-900 font-medium">Success Rate</div>
               </div>
               
               <div className="text-center">
-                <div className="text-2xl font-bold text-success-600">
+                <div className="text-2xl font-bold text-gray-900">
                   {perfectRate.toFixed(1)}%
                 </div>
-                <div className="text-sm text-gray-400">Perfect Matches</div>
+                <div className="text-sm text-gray-900 font-medium">Perfect Matches</div>
               </div>
             </div>
             
             {/* Detailed Match Breakdown */}
             <div className="mt-4 pt-4 border-t border-gray-200">
-              <h5 className="text-sm font-medium text-gray-500 mb-3">Match Breakdown</h5>
+              <h5 className="text-sm font-medium text-gray-700 mb-3">Match Breakdown</h5>
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Perfect (90%+):</span>
-                  <span className="font-medium text-gray-500">{perfectMatches}</span>
+                  <span className="text-gray-900 font-medium">Perfect (90%+):</span>
+                  <span className="font-bold text-gray-900">{perfectMatches}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Strong (80%+):</span>
-                  <span className="font-medium text-gray-500">{strongMatches}</span>
+                  <span className="text-gray-900 font-medium">Strong (80%+):</span>
+                  <span className="font-bold text-gray-900">{strongMatches}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Moderate (60%+):</span>
-                  <span className="font-medium text-gray-500">{moderateMatches}</span>
+                  <span className="text-gray-900 font-medium">Moderate (60%+):</span>
+                  <span className="font-bold text-gray-900">{moderateMatches}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-400">Manual Entries:</span>
-                  <span className="font-medium text-gray-500">{manualEntries}</span>
+                  <span className="text-gray-900 font-medium">Manual Entries:</span>
+                  <span className="font-bold text-gray-900">{manualEntries}</span>
                 </div>
               </div>
             </div>
             
             <div className="mt-4 pt-4 border-t border-gray-200">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-400">Processing Time:</span>
-                <span className="font-medium text-gray-500">{processingResult.processing_time.toFixed(1)}s</span>
+                <span className="text-gray-900 font-medium">Processing Time:</span>
+                <span className="font-bold text-gray-900">{processingResult.processing_time.toFixed(1)}s</span>
               </div>
             </div>
           </div>
@@ -196,34 +249,18 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
 
             {/* Export Options */}
             <div className="space-y-4">
-              <h4 className="font-medium text-gray-500">Export Options</h4>
+              <h4 className="font-medium text-gray-300">Excel Export Options</h4>
             
-            {/* Format Selection */}
-            <div>
-              <label className="block text-sm font-medium text-gray-500 mb-2">
-                Export Format
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(['png', 'jpg', 'pdf'] as const).map((format) => (
-                  <button
-                    key={format}
-                    onClick={() => setExportFormat(format)}
-                    className={`
-                      p-3 border rounded-lg text-center transition-colors duration-200
-                      ${exportFormat === format
-                        ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-300 hover:border-gray-400'
-                      }
-                    `}
-                  >
-                    <div className="flex flex-col items-center space-y-1">
-                      {format === 'png' && <ImageIcon className="w-5 h-5" />}
-                      {format === 'jpg' && <ImageIcon className="w-5 h-5" />}
-                      {format === 'pdf' && <FileText className="w-5 h-5" />}
-                      <span className="text-sm font-medium uppercase">{format}</span>
-                    </div>
-                  </button>
-                ))}
+            {/* Excel Format Info */}
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="flex items-center space-x-3">
+                <FileSpreadsheet className="w-6 h-6 text-green-600" />
+                <div>
+                  <h5 className="font-medium text-green-800">Excel Export Ready</h5>
+                  <p className="text-sm text-green-700">
+                    Your book list will be exported as a professional Excel spreadsheet with all book details.
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -236,7 +273,7 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
                   onChange={(e) => setIncludeMetadata(e.target.checked)}
                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="ml-2 text-sm text-gray-400">
+                <span className="ml-2 text-sm text-gray-300">
                   Include metadata (processing time, confidence scores, etc.)
                 </span>
               </label>
@@ -248,7 +285,7 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
                   onChange={(e) => setIncludeOCRText(e.target.checked)}
                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="ml-2 text-sm text-gray-400">
+                <span className="ml-2 text-sm text-gray-300">
                   Include original OCR text readings
                 </span>
               </label>
@@ -260,7 +297,7 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
                   onChange={(e) => setIncludeConfidenceScores(e.target.checked)}
                   className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
                 />
-                <span className="ml-2 text-sm text-gray-400">
+                <span className="ml-2 text-sm text-gray-300">
                   Include confidence scores for each detection
                 </span>
               </label>
@@ -275,35 +312,77 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
               {isExporting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>Exporting...</span>
+                  <span>Generating Excel...</span>
                 </>
               ) : (
                 <>
-                  <Download className="w-4 h-4" />
-                  <span>Export {exportFormat.toUpperCase()}</span>
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Export Excel</span>
                 </>
               )}
             </button>
           </div>
         </div>
 
-        {/* Right: Preview */}
+        {/* Right: Excel Preview */}
         <div className="space-y-4">
-          <h4 className="font-medium text-gray-500">Final Image Preview</h4>
+          <h4 className="font-medium text-gray-300">Excel Export Preview</h4>
           
-          <div className="bg-gray-100 rounded-lg p-4 min-h-[300px] flex items-center justify-center">
-            <div className="text-center text-gray-400">
-              <ImageIcon className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-              <p className="text-lg font-medium mb-2">Preview Coming Soon</p>
-              <p className="text-sm">
-                The final labeled image will appear here with:
-              </p>
-              <ul className="text-xs text-gray-400 mt-2 space-y-1">
-                <li>• Numbered spine regions</li>
-                <li>• Book titles and authors</li>
-                <li>• Confidence indicators</li>
-                <li>• Professional labeling</li>
-              </ul>
+          <div className="bg-gray-50 rounded-lg p-4 min-h-[300px]">
+            <div className="text-center mb-4">
+              <FileSpreadsheet className="w-8 h-8 mx-auto mb-2 text-gray-400" />
+              <p className="text-sm font-medium text-gray-600">Excel Preview</p>
+            </div>
+            
+            {/* Sample Excel Data Preview */}
+            <div className="bg-white rounded border overflow-hidden">
+              <div className="bg-gray-100 px-3 py-2 border-b">
+                <div className="grid grid-cols-6 gap-2 text-xs font-medium text-gray-700">
+                  <div>Spine #</div>
+                  <div>Title</div>
+                  <div>Author(s)</div>
+                  <div>Year</div>
+                  <div>Type</div>
+                  <div>ID</div>
+                </div>
+              </div>
+              
+              <div className="max-h-48 overflow-y-auto">
+                {processingResult.book_matches.slice(0, 5).map((book, index) => (
+                  <div key={book.id} className="grid grid-cols-6 gap-2 px-3 py-2 border-b border-gray-100 text-xs">
+                    <div className="text-gray-600 font-medium">{index + 1}</div>
+                    <div className="text-gray-800 truncate" title={book.title}>
+                      {book.title || 'Unknown Title'}
+                    </div>
+                    <div className="text-gray-700 truncate" title={Array.isArray(book.author_name) ? book.author_name.join(', ') : book.author_name}>
+                      {Array.isArray(book.author_name) ? book.author_name.join(', ') : book.author_name || 'Unknown'}
+                    </div>
+                    <div className="text-gray-600">{book.first_publish_year || 'N/A'}</div>
+                    <div className="text-gray-600">{book.match_type || 'N/A'}</div>
+                    <div className="text-gray-500 truncate" title={book.open_library_id}>
+                      {book.open_library_id ? book.open_library_id.slice(-8) : 'N/A'}
+                    </div>
+                  </div>
+                ))}
+                
+                {processingResult.book_matches.length > 5 && (
+                  <div className="px-3 py-2 text-xs text-gray-500 text-center">
+                    ... and {processingResult.book_matches.length - 5} more books
+                  </div>
+                )}
+                
+                {processingResult.book_matches.length === 0 && (
+                  <div className="px-3 py-4 text-xs text-gray-500 text-center">
+                    No books to export
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="mt-3 text-xs text-gray-500">
+              {includeMetadata && <div>• Includes processing metadata</div>}
+              {includeOCRText && <div>• Includes OCR text column</div>}
+              {includeConfidenceScores && <div>• Includes confidence scores</div>}
             </div>
           </div>
 
@@ -312,11 +391,10 @@ const FinalizePanel: React.FC<FinalizePanelProps> = ({
             <div className="flex items-start space-x-3">
               <CheckCircle className="w-5 h-5 text-blue-600 mt-0.5" />
               <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">Export Ready</p>
+                <p className="font-medium mb-1">Excel Export Ready</p>
                 <p>
                   Your image has been processed with {successfulMatches} book{successfulMatches !== 1 ? 's' : ''} identified 
-                  ({successRate.toFixed(1)}% success rate). The final image will include numbered spine regions with 
-                  corresponding book information below.
+                  ({successRate.toFixed(1)}% success rate). The Excel file will contain all book details in a professional spreadsheet format.
                 </p>
                 {manualEntries > 0 && (
                   <p className="mt-2 text-blue-700">

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { BookOpen, AlertCircle, Edit3, Plus, Save, X, Move } from 'lucide-react';
+
+import { BookOpen, AlertCircle, Plus, Save, X, Move } from 'lucide-react';
 
 import { SpineRegion, BookMatch } from '../types';
 
@@ -53,25 +53,16 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Debug logging for editingBookId
-  console.log('🔍 SpineVisualizer render - editingBookId:', editingBookId);
-  console.log('🔍 SpineVisualizer render - editingState:', editingState);
-  console.log('🔍 SpineVisualizer render - spineRegions count:', spineRegions.length);
-  console.log('🔍 SpineVisualizer render - bookMatches count:', bookMatches.length);
+
 
   // Auto-enter editing mode when editingBookId changes
   useEffect(() => {
-    console.log('🔄 useEffect triggered - editingBookId changed to:', editingBookId);
     if (editingBookId) {
-      console.log('🔄 Auto-entering editing mode for book:', editingBookId);
       // Find the spine region for this book
       const book = bookMatches.find(b => b.id === editingBookId);
-      console.log('🔍 Found book:', book?.title, 'spine_region_id:', book?.spine_region_id);
       if (book && book.spine_region_id) {
         const spine = spineRegions.find(s => s.id === book.spine_region_id);
-        console.log('🔍 Found spine:', spine?.id);
         if (spine) {
-          console.log('✅ Found spine, entering editing mode');
           setEditingState({
             mode: 'editing',
             spineId: spine.id,
@@ -79,7 +70,6 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
             isDragging: false
           });
         } else {
-          console.log('❌ No spine found for book, entering drawing mode');
           setEditingState({
             mode: 'drawing',
             spineId: editingBookId,
@@ -88,7 +78,6 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
           });
         }
       } else {
-        console.log('❌ No book or spine_region_id found, entering drawing mode');
         setEditingState({
           mode: 'drawing',
           spineId: editingBookId,
@@ -97,7 +86,6 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
         });
       }
     } else {
-      console.log('🔄 Exiting editing mode');
       setEditingState({
         mode: 'none',
         spineId: null,
@@ -137,7 +125,7 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
   }, [imageLoaded]);
 
   // Convert spine polygon to scaled SVG points string
-  const getScaledPoints = (spine: SpineRegion) => {
+  const getScaledPoints = useCallback((spine: SpineRegion) => {
     if (!spine.coordinates || spine.coordinates.length === 0) return '';
     return spine.coordinates
       .map(([x, y]) => {
@@ -146,59 +134,45 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
         return `${sx},${sy}`;
       })
       .join(' ');
-  };
+  }, [imageScale.scaleX, imageScale.scaleY]);
 
   // Convert SVG coordinates back to image coordinates
-  const getImageCoordinates = (svgX: number, svgY: number): [number, number] => {
+  const getImageCoordinates = useCallback((svgX: number, svgY: number): [number, number] => {
     return [svgX / imageScale.scaleX, svgY / imageScale.scaleY];
-  };
+  }, [imageScale.scaleX, imageScale.scaleY]);
 
   // Compute centroid for label/tooltip positioning within overlay
-  const getCentroid = (spine: SpineRegion) => {
+  const getCentroid = useCallback((spine: SpineRegion) => {
     if (!spine.coordinates || spine.coordinates.length === 0) return { x: 0, y: 0 };
     const pts = spine.coordinates;
     const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length;
     const cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
     return { x: cx * imageScale.scaleX, y: cy * imageScale.scaleY };
-  };
+  }, [imageScale.scaleX, imageScale.scaleY]);
 
-  // Helper function to get spine region by ID
-  const getSpineRegion = (id: string) => {
-    return spineRegions.find(spine => spine.id === id);
-  };
+
 
   // Helper function to get book data for a spine
-  const getBookData = (spineId: string) => {
-    const book = bookMatches.find(book => book.spine_region_id === spineId);
-    console.log('🔍 getBookData for spine:', spineId, 'found book:', book?.id, 'title:', book?.title);
-    return book;
-  };
+  const getBookData = useCallback((spineId: string) => {
+    return bookMatches.find(book => book.spine_region_id === spineId);
+  }, [bookMatches]);
 
   // Handle spine region click
-  const handleSpineClick = (spineId: string) => {
+  const handleSpineClick = useCallback((spineId: string) => {
     if (editingState.mode === 'drawing') return; // Don't select while drawing
     onSpineSelected(spineId);
-  };
+  }, [editingState.mode, onSpineSelected]);
 
   // Handle spine region hover
-  const handleSpineHover = (spineId: string | null) => {
+  const handleSpineHover = useCallback((spineId: string | null) => {
     if (editingState.mode === 'drawing') return; // Don't hover while drawing
     setHoveredSpineId(spineId);
-  };
+  }, [editingState.mode]);
 
-  // Start editing mode for a spine
-  const startEditing = (spineId: string) => {
-    setEditingState({
-      mode: 'editing',
-      spineId,
-      vertexIndex: null,
-      isDragging: false
-    });
-  };
+
 
   // Start drawing mode for manual entry
-  const startDrawing = (spineId: string) => {
-    console.log('🎨 Starting drawing mode for spine:', spineId);
+  const startDrawing = useCallback((spineId: string) => {
     setEditingState({
       mode: 'drawing',
       spineId,
@@ -211,16 +185,15 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
     if (editingBookId && onSpineRegionsUpdated) {
       const book = bookMatches.find(b => b.id === editingBookId);
       if (book && book.spine_region_id) {
-        console.log('🗑️ Removing old spine:', book.spine_region_id);
         const updatedRegions = localSpineRegions.filter(spine => spine.id !== book.spine_region_id);
         setLocalSpineRegions(updatedRegions);
         onSpineRegionsUpdated(updatedRegions);
       }
     }
-  };
+  }, [editingBookId, onSpineRegionsUpdated, bookMatches, localSpineRegions]);
 
   // Cancel editing/drawing mode
-  const cancelEditing = () => {
+  const cancelEditing = useCallback(() => {
     setEditingState({
       mode: 'none',
       spineId: null,
@@ -228,10 +201,10 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
       isDragging: false
     });
     setDrawingPoints([]);
-  };
+  }, []);
 
   // Save manual drawing
-  const saveManualDrawing = () => {
+  const saveManualDrawing = useCallback(() => {
     if (drawingPoints.length >= 3 && onManualSpineAdded && editingBookId) {
       const newSpine: SpineRegion = {
         id: `manual_${Date.now()}`,
@@ -247,10 +220,10 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
       onManualSpineAdded(newSpine);
       cancelEditing();
     }
-  };
+  }, [drawingPoints, onManualSpineAdded, editingBookId, cancelEditing]);
 
   // Handle SVG click for drawing
-  const handleSvgClick = (event: React.MouseEvent<SVGSVGElement>) => {
+  const handleSvgClick = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
     if (editingState.mode !== 'drawing') return;
     
     const svg = svgRef.current;
@@ -262,10 +235,10 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
     
     const imageCoords = getImageCoordinates(x, y);
     setDrawingPoints(prev => [...prev, imageCoords]);
-  };
+  }, [editingState.mode, getImageCoordinates]);
 
   // Handle vertex drag start
-  const handleVertexDragStart = (spineId: string, vertexIndex: number) => {
+  const handleVertexDragStart = useCallback((spineId: string, vertexIndex: number) => {
     setEditingState(prev => ({
       ...prev,
       mode: 'editing',
@@ -273,7 +246,7 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
       vertexIndex,
       isDragging: true
     }));
-  };
+  }, []);
 
   // Handle vertex drag - use local state for smooth dragging
   const handleVertexDrag = useCallback((spineId: string, vertexIndex: number, newX: number, newY: number) => {
@@ -290,7 +263,7 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
       }
       return spine;
     }));
-  }, [imageScale]);
+  }, [getImageCoordinates]);
 
   // Handle mouse move for vertex dragging
   const handleMouseMove = useCallback((event: React.MouseEvent<SVGSVGElement>) => {
@@ -307,7 +280,7 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
   }, [editingState, handleVertexDrag]);
 
   // Handle vertex drag end
-  const handleVertexDragEnd = () => {
+  const handleVertexDragEnd = useCallback(() => {
     setEditingState(prev => ({
       ...prev,
       isDragging: false
@@ -317,10 +290,10 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
     if (onSpineRegionsUpdated) {
       onSpineRegionsUpdated(localSpineRegions);
     }
-  };
+  }, [onSpineRegionsUpdated, localSpineRegions]);
 
   // Render vertex handles for editing
-  const renderVertexHandles = (spine: SpineRegion) => {
+  const renderVertexHandles = useCallback((spine: SpineRegion) => {
     if (editingState.mode !== 'editing' || editingState.spineId !== spine.id) return null;
     
     return spine.coordinates?.map((coord, index) => {
@@ -347,10 +320,10 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
         />
       );
     });
-  };
+  }, [editingState.mode, editingState.spineId, editingState.isDragging, imageScale.scaleX, imageScale.scaleY, handleVertexDragStart, handleVertexDragEnd]);
 
   // Render drawing points
-  const renderDrawingPoints = () => {
+  const renderDrawingPoints = useCallback(() => {
     if (editingState.mode !== 'drawing' || drawingPoints.length === 0) return null;
     
     return (
@@ -380,10 +353,10 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
         ))}
       </g>
     );
-  };
+  }, [editingState.mode, drawingPoints, imageScale.scaleX, imageScale.scaleY]);
 
   // Render spine region as polygon within an SVG aligned to the image
-  const renderSpineRegion = (spine: SpineRegion) => {
+  const renderSpineRegion = useCallback((spine: SpineRegion) => {
     const book = getBookData(spine.id);
     const points = getScaledPoints(spine);
     const { x: cx, y: cy } = getCentroid(spine);
@@ -392,17 +365,13 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
     const isEditing = editingState.mode === 'editing' && editingState.spineId === spine.id;
     const isDrawing = editingState.mode === 'drawing' && editingState.spineId === spine.id;
     const hasSelection = selectedSpineId !== null;
-    const isOtherSelected = hasSelection && !isSelected;
-
-    // Debug logging
-    console.log('🔍 Rendering spine:', spine.id, 'editingBookId:', editingBookId, 'book?.spine_region_id:', book?.spine_region_id);
+    const isOtherSelected = hasSelection && !isEditing && !isDrawing;
 
     // Only show spines that are being edited or not in editing mode
     if (editingBookId && !isEditing && !isDrawing) {
       // Check if this spine belongs to the book being edited
       const isTargetBook = book && book.id === editingBookId;
       if (!isTargetBook) {
-        console.log('🚫 Hiding spine:', spine.id, 'because it\'s not the editing target book');
         return null;
       }
     }
@@ -449,7 +418,7 @@ const SpineVisualizer: React.FC<SpineVisualizerProps> = ({
         )}
       </g>
     );
-  };
+  }, [getBookData, getScaledPoints, getCentroid, selectedSpineId, hoveredSpineId, editingState, editingBookId, spineRegions, overlayRect, renderVertexHandles, handleSpineHover, handleSpineClick]);
 
   return (
     <div className="card p-0 overflow-hidden">

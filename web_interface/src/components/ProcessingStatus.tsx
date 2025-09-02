@@ -163,7 +163,7 @@ const ProcessingStatus: React.FC<ProcessingStatusProps> = ({ state }) => {
                 </div>
                 <div className="flex items-center justify-center space-x-2">
                   <div className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-900/50 text-blue-300 border border-blue-700">
-                    📚 {state.message.match(/spine (\d+)/)?.[1] || '0'} of 5 spines processed
+                    {state.message.match(/spine (\d+)/)?.[1] || '0'} of 5 spines processed
                   </div>
                 </div>
               </div>
@@ -175,10 +175,10 @@ const ProcessingStatus: React.FC<ProcessingStatusProps> = ({ state }) => {
                   {state.message.includes('spines') && state.message.includes('successful matches') && (
                     <div className="space-y-1">
                       <div className="inline-flex items-center px-2 py-1 rounded text-xs bg-blue-900/50 text-blue-300 border border-blue-700">
-                        📚 {state.message.match(/Found (\d+) spines/)?.[1] || '0'} spines detected
+                        {state.message.match(/Found (\d+) spines/)?.[1] || '0'} spines detected
                       </div>
                       <div className="inline-flex items-center px-2 py-1 rounded text-xs bg-green-900/50 text-green-300 border border-green-700 ml-2">
-                        ✅ {state.message.match(/(\d+) successful matches/)?.[1] || '0'} successful matches
+                        {state.message.match(/(\d+) successful matches/)?.[1] || '0'} successful matches
                       </div>
                     </div>
                   )}

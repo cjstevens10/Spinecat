@@ -1,9 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-import tempfile
 import os
 import sys
 import logging
@@ -11,7 +9,7 @@ import traceback
 from pathlib import Path
 import uuid
 from threading import Thread
-from typing import List, Dict, Any
+from typing import Dict, Any
 import numpy as np
 import uvicorn
 import requests
@@ -30,8 +28,7 @@ logger = logging.getLogger(__name__)
 pipeline: SpinecatPipeline = None
 
 # Task registry for background processing
-# tasks[task_id] = { status, progress, message, result, error }
-tasks: dict[str, dict] = {}
+tasks: Dict[str, Dict[str, Any]] = {}
 
 # Static uploads directory
 BASE_DIR = Path(__file__).parent
@@ -49,36 +46,28 @@ async def lifespan(app: FastAPI):
         
         # Get the path to the YOLO model
         yolo_model_path = config.YOLO_MODEL_PATH
-        google_vision_api_key = config.GOOGLE_VISION_API_KEY
+        easyocr_enabled = config.EASYOCR_ENABLED
         
-        if not google_vision_api_key:
-            logger.error("GOOGLE_VISION_API_KEY environment variable not set")
+        if not easyocr_enabled:
+            logger.error("EasyOCR is disabled")
             return
         
         logger.info(f"Using YOLO model path: {yolo_model_path}")
         
         # Initialize the pipeline with advanced matching enabled
+        # Note: The pipeline expects google_vision_api_key but we're using EasyOCR
+        # We'll pass a dummy key since the OCR processor uses EasyOCR internally
         pipeline = SpinecatPipeline(
             yolo_model_path=yolo_model_path,
-            google_vision_api_key=google_vision_api_key,
-            use_semantic_matching=config.USE_LEGACY_MATCHING,  # Use config for legacy matching
-            use_advanced_matching=config.USE_ADVANCED_MATCHING  # Use config for advanced matching
+            google_vision_api_key="dummy_key_for_easyocr"  # Dummy key since we use EasyOCR
         )
         
         logger.info("Spinecat pipeline initialized successfully")
         
-        # Log which matching system is being used
-        if config.USE_ADVANCED_MATCHING:
-            logger.info("✅ Advanced matching system (character n-gram) is ENABLED")
-            logger.info(f"   - Confidence threshold: {config.ADVANCED_MATCHING_CONFIDENCE_THRESHOLD}")
-            logger.info(f"   - Top K results: {config.ADVANCED_MATCHING_TOP_K}")
-        else:
-            logger.info("❌ Advanced matching system is DISABLED")
-            
-        if config.USE_LEGACY_MATCHING:
-            logger.info("✅ Legacy matching system (fuzzy/semantic) is ENABLED")
-        else:
-            logger.info("❌ Legacy matching system is DISABLED")
+        # Log advanced matching configuration
+        logger.info("Advanced matching system (character n-gram) is ENABLED")
+        logger.info(f"   - Confidence threshold: {config.ADVANCED_MATCHING_CONFIDENCE_THRESHOLD}")
+        logger.info(f"   - Top K results: {config.ADVANCED_MATCHING_TOP_K}")
         
     except Exception as e:
         logger.error(f"Failed to initialize pipeline: {e}")
@@ -96,10 +85,11 @@ def update_task_progress(task_id: str, progress: int, message: str) -> None:
         tasks[task_id]["status"] = "processing"
         print(f"📡 [{task_id}] {progress}% - {message}")
 
-def _to_float(value):
+def _to_float(value: Any) -> Any:
+    """Convert value to float, return original if conversion fails"""
     try:
         return float(value)
-    except Exception:
+    except (ValueError, TypeError):
         return value
 
 def _run_pipeline_background(task_id: str, image_file_path: str):
@@ -118,11 +108,11 @@ def _run_pipeline_background(task_id: str, image_file_path: str):
         results = pipeline.process_image(image_file_path, conf_threshold=config.CONFIDENCE_THRESHOLD, progress_callback=progress_callback)
         
         # Debug logging
-        logging.info(f"Pipeline results type: {type(results)}")
-        logging.info(f"Pipeline results length: {len(results) if results else 'None'}")
+        logger.info(f"Pipeline results type: {type(results)}")
+        logger.info(f"Pipeline results length: {len(results) if results else 'None'}")
         if results and len(results) > 0:
-            logging.info(f"First result type: {type(results[0])}")
-            logging.info(f"First result attributes: {dir(results[0])}")
+            logger.info(f"First result type: {type(results[0])}")
+            logger.info(f"First result attributes: {dir(results[0])}")
 
         # Build response payload
         total_spines = len(results) if results else 0
@@ -131,10 +121,13 @@ def _run_pipeline_background(task_id: str, image_file_path: str):
         spine_regions = []
         book_matches = []
         ocr_failures = []
+        
+        # Store top matches for each spine for alternatives lookup
+        stored_alternatives = {}
 
         for i, result in enumerate(results or []):
-            logging.info(f"Processing result {i}: {type(result)}")
-            logging.info(f"Result attributes: {dir(result)}")
+            logger.info(f"Processing result {i}: {type(result)}")
+            logger.info(f"Result attributes: {dir(result)}")
             
             if hasattr(result, 'best_match') and result.best_match:
                 successful_matches += 1
@@ -192,6 +185,24 @@ def _run_pipeline_background(task_id: str, image_file_path: str):
                 openlib_key = getattr(lb, 'key', "") if lb else ""
                 # Prefer denoised text from match; fallback to result.denoised_text
                 ocr_text_value = getattr(bm, 'denoised_text', '') or (getattr(result, 'denoised_text', None).denoised_text if getattr(result, 'denoised_text', None) else '') or ''
+                
+                # Store top matches for alternatives (excluding the best match)
+                if hasattr(result, 'matches') and result.matches:
+                    stored_alternatives[spine_id] = []
+                    for match in result.matches[1:10]:  # Skip the best match (index 0), take next 9
+                        match_lb = getattr(match, 'library_book', None)
+                        if match_lb:
+                            stored_alternatives[spine_id].append({
+                                "key": getattr(match_lb, 'key', ""),
+                                "title": getattr(match_lb, 'title', ""),
+                                "author_name": getattr(match_lb, 'author_name', []),
+                                "first_publish_year": getattr(match_lb, 'first_publish_year', None),
+                                "publisher": ", ".join(getattr(match_lb, 'publisher', [])) if isinstance(getattr(match_lb, 'publisher', []), list) else (getattr(match_lb, 'publisher', "") or ""),
+                                "match_score": _to_float(getattr(match, 'match_score', getattr(match, 'confidence', 0.0))),
+                                "match_type": getattr(match, 'match_type', 'moderate'),
+                                "confidence": _to_float(getattr(match, 'confidence', getattr(match, 'match_score', 0.0)))
+                            })
+                
                 book_matches.append({
                     "id": str(uuid.uuid4()),
                     "spine_region_id": spine_id,
@@ -224,25 +235,23 @@ def _run_pipeline_background(task_id: str, image_file_path: str):
             "book_matches": book_matches,
             "ocr_failures": ocr_failures,
             "processing_time": 0.0,
+            "stored_alternatives": stored_alternatives,  # Store alternatives for fast lookup
         }
         
-        logging.info(f"Final result data: {result_data}")
-        logging.info(f"Book matches count: {len(book_matches)}")
+        logger.info(f"Final result data: {result_data}")
+        logger.info(f"Book matches count: {len(book_matches)}")
         if book_matches:
-            logging.info(f"First book match: {book_matches[0]}")
+            logger.info(f"First book match: {book_matches[0]}")
         
         tasks[task_id]["result"] = result_data
         update_task_progress(task_id, 100, f"Processing complete! Found {total_spines} spines.")
         tasks[task_id]["status"] = "completed"
     except Exception as e:
-        logging.error(f"Pipeline processing failed: {str(e)}")
-        logging.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Pipeline processing failed: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         tasks[task_id]["status"] = "error"
         tasks[task_id]["error"] = str(e)
         tasks[task_id]["message"] = "Processing failed"
-    finally:
-        # Do not delete saved upload used for display
-        pass
 
 app = FastAPI(title="Spinecat API", version="1.0.0", lifespan=lifespan)
 
@@ -279,28 +288,15 @@ async def health_check():
 @app.get("/api/debug")
 async def debug_endpoint():
     """Debug endpoint to test basic functionality"""
-    print("🔍 DEBUG ENDPOINT HIT!")
-    logger.info("🔍 DEBUG ENDPOINT HIT!")
+    print("DEBUG ENDPOINT HIT!")
+    logger.info("DEBUG ENDPOINT HIT!")
     return {
         "message": "Debug endpoint working",
         "pipeline_status": "initialized" if pipeline else "not_initialized",
         "tasks": {k: {"status": v.get("status"), "progress": v.get("progress"), "message": v.get("message")} for k, v in tasks.items()}
     }
 
-@app.get("/api/test-progress/{task_id}")
-async def test_progress(task_id: str):
-    """Test endpoint to manually trigger a progress update for a specific task"""
-    if task_id not in tasks:
-        raise HTTPException(status_code=404, detail="Unknown task_id")
-    update_task_progress(task_id, 50, "Test progress update from API endpoint")
-    return {"ok": True}
 
-@app.post("/api/test")
-async def test_endpoint(file: UploadFile = File(...)):
-    """Simple test endpoint to verify API connectivity"""
-    logger.info("🧪 TEST ENDPOINT CALLED!")
-    logger.info(f"📁 Test file received: {file.filename}")
-    return {"status": "success", "filename": file.filename, "size": file.size}
 
 @app.get("/api/progress/{task_id}")
 async def get_progress(task_id: str):
@@ -355,6 +351,47 @@ async def process_image_start(file: UploadFile = File(...)):
 
     return {"task_id": task_id}
 
+@app.get("/api/alternatives-by-spine")
+async def get_alternatives_by_spine(
+    task_id: str,
+    spine_id: str,
+    limit: int = 10
+):
+    """
+    Get alternative book matches from stored results (fast)
+    This uses the matches that were already computed during initial processing
+    """
+    if not task_id or not spine_id:
+        raise HTTPException(status_code=400, detail="Task ID and spine ID are required")
+    
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task = tasks[task_id]
+    if task.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Task not completed")
+    
+    result = task.get("result", {})
+    stored_alternatives = result.get("stored_alternatives", {})
+    
+    if spine_id not in stored_alternatives:
+        return {
+            "success": True,
+            "spine_id": spine_id,
+            "total_results": 0,
+            "results": [],
+            "note": "No stored alternatives found for this spine"
+        }
+    
+    alternatives = stored_alternatives[spine_id][:limit]
+    
+    return {
+        "success": True,
+        "spine_id": spine_id,
+        "total_results": len(alternatives),
+        "results": alternatives
+    }
+
 @app.get("/api/alternatives")
 async def get_alternatives(
     ocr_text: str,
@@ -375,75 +412,13 @@ async def get_alternatives(
     
     try:
         # Use the actual backend matching algorithm to get alternatives
-        # This ensures we get the same scoring and matching logic as the initial processing
         logger.info(f"Getting alternatives for OCR text: '{ocr_text}' with limit: {limit}")
         
         alternatives = pipeline.get_alternatives(ocr_text, limit)
         logger.info(f"Pipeline returned {len(alternatives) if alternatives else 0} alternatives")
-        logger.info(f"Alternatives type: {type(alternatives)}")
-        logger.info(f"Alternatives truthy check: {bool(alternatives)}")
-        
-        if alternatives:
-            logger.info(f"First alternative: {alternatives[0] if alternatives else 'None'}")
-            logger.info(f"First alternative type: {type(alternatives[0]) if alternatives else 'None'}")
         
         if not alternatives:
             logger.warning(f"No alternatives found for OCR text: '{ocr_text}'")
-            
-            # Try a simple fallback search to see if we can get any results
-            try:
-                logger.info("Trying fallback search with Open Library API directly")
-                import requests
-                
-                search_url = "https://openlibrary.org/search.json"
-                params = {
-                    "q": ocr_text.strip(),
-                    "limit": 5,
-                    "fields": "key,title,author_name,first_publish_year,publisher"
-                }
-                
-                headers = {
-                    'User-Agent': 'Spinecat/1.0 (Fallback Search)'
-                }
-                
-                response = requests.get(search_url, params=params, headers=headers, timeout=15)
-                if response.ok:
-                    data = response.json()
-                    fallback_results = data.get("docs", [])
-                    logger.info(f"Fallback search found {len(fallback_results)} results")
-                    
-                    if fallback_results:
-                        # Return fallback results with placeholder scores
-                        mapped_results = []
-                        for book in fallback_results:
-                            author_names = book.get("author_name", [])
-                            if isinstance(author_names, list):
-                                author_display = ", ".join(author_names) if author_names else "Unknown Author"
-                            else:
-                                author_display = str(author_names) if author_names else "Unknown Author"
-                            
-                            mapped = {
-                                "key": book.get("key", ""),
-                                "title": book.get("title", "Unknown Title"),
-                                "author_name": author_display,
-                                "first_publish_year": book.get("first_publish_year"),
-                                "publisher": book.get("publisher", "Unknown Publisher"),
-                                "match_score": 0.7,  # Placeholder score for fallback
-                                "match_type": "moderate",
-                                "confidence": 0.7
-                            }
-                            mapped_results.append(mapped)
-                        
-                        return {
-                            "success": True,
-                            "ocr_text": ocr_text,
-                            "total_results": len(mapped_results),
-                            "results": mapped_results,
-                            "note": "Using fallback search results"
-                        }
-            except Exception as fallback_error:
-                logger.error(f"Fallback search also failed: {fallback_error}")
-            
             return {
                 "success": True,
                 "ocr_text": ocr_text,
@@ -475,23 +450,16 @@ async def get_alternatives(
             mapped_results.append(mapped)
         
         logger.info(f"Returning {len(mapped_results)} mapped results")
-        logger.info(f"First mapped result: {mapped_results[0] if mapped_results else 'None'}")
         
-        response_data = {
+        return {
             "success": True,
             "ocr_text": ocr_text,
             "total_results": len(mapped_results),
             "results": mapped_results
         }
         
-        logger.info(f"Final response structure: {response_data}")
-        return response_data
-        
     except Exception as e:
         logger.error(f"Failed to get alternatives: {e}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        logger.error(f"Exception details: {str(e)}")
-        import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to get alternatives: {str(e)}")
 
@@ -508,18 +476,9 @@ async def search_books(query: str, limit: int = 20):
         limit = 100  # Cap at 100 results
     
     try:
-        # Test if requests module is available
-        logger.info(f"Testing manual search for query: '{query}' with limit: {limit}")
+        logger.info(f"Manual search for query: '{query}' with limit: {limit}")
         
-        # Check if requests is available
-        try:
-            import requests
-            logger.info("✅ requests module imported successfully")
-        except ImportError as ie:
-            logger.error(f"❌ requests module not available: {ie}")
-            raise HTTPException(status_code=500, detail="HTTP client not available")
-        
-        # Direct, simple search to Open Library API - no pipeline complexity
+        # Direct search to Open Library API
         search_url = "https://openlibrary.org/search.json"
         params = {
             "q": query.strip(),
@@ -531,12 +490,7 @@ async def search_books(query: str, limit: int = 20):
             'User-Agent': 'Spinecat/1.0 (Manual Book Search)'
         }
         
-        logger.info(f"Making request to: {search_url}")
-        logger.info(f"With params: {params}")
-        
         response = requests.get(search_url, params=params, headers=headers, timeout=15)
-        logger.info(f"Response status: {response.status_code}")
-        
         response.raise_for_status()
         
         data = response.json()
@@ -601,9 +555,6 @@ async def search_books(query: str, limit: int = 20):
         
     except Exception as e:
         logger.error(f"Manual book search failed: {e}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        logger.error(f"Exception details: {str(e)}")
-        import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
 
@@ -710,9 +661,6 @@ async def search_books_advanced(
         
     except Exception as e:
         logger.error(f"Advanced book search failed: {e}")
-        logger.error(f"Exception type: {type(e).__name__}")
-        logger.error(f"Exception details: {str(e)}")
-        import traceback
         logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Advanced search failed: {str(e)}")
 

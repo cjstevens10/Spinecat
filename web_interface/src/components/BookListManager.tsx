@@ -11,6 +11,7 @@ interface BookListManagerProps {
   bookMatches: BookMatch[];
   ocrFailures: OCRFailure[];
   selectedSpineId: string | null;
+  taskId: string | null;  // Add task ID for alternatives lookup
   onSpineSelected: (spineId: string) => void;
   onBookListUpdated: (updatedMatches: BookMatch[]) => void;
   onStartEditing?: (bookId: string) => void;
@@ -21,6 +22,7 @@ const BookListManager: React.FC<BookListManagerProps> = ({
   bookMatches,
   ocrFailures,
   selectedSpineId,
+  taskId,
   onSpineSelected,
   onBookListUpdated,
   onStartEditing,
@@ -32,14 +34,7 @@ const BookListManager: React.FC<BookListManagerProps> = ({
   const [selectedBookForSearch, setSelectedBookForSearch] = useState<BookMatch | null>(null);
   const [modifiedBooks, setModifiedBooks] = useState<Set<string>>(new Set());
 
-  // Debug logging
-  console.log('🔍 BookListManager received data:', { bookMatches, ocrFailures });
-  if (bookMatches.length > 0) {
-    console.log('🔍 First book data:', bookMatches[0]);
-    console.log('🔍 First book author_name:', bookMatches[0].author_name);
-    console.log('🔍 First book title:', bookMatches[0].title);
-    console.log('🔍 First book ocr_text:', bookMatches[0].ocr_text);
-  }
+
 
   // Handle book selection
   const handleBookClick = (book: BookMatch) => {
@@ -47,9 +42,7 @@ const BookListManager: React.FC<BookListManagerProps> = ({
     
     // Scroll to the book in the list
     const bookElement = document.querySelector(`[data-book-id="${book.id}"]`);
-    console.log('🔍 Looking for book element:', book.id, bookElement);
     if (bookElement) {
-      console.log('✅ Found book element, scrolling to it');
       bookElement.scrollIntoView({ 
         behavior: 'smooth', 
         block: 'center',
@@ -61,8 +54,6 @@ const BookListManager: React.FC<BookListManagerProps> = ({
       setTimeout(() => {
         bookElement.classList.remove('ring-2', 'ring-blue-400', 'ring-opacity-75');
       }, 2000);
-    } else {
-      console.warn('❌ Book element not found for ID:', book.id);
     }
   };
 
@@ -248,13 +239,8 @@ const BookListManager: React.FC<BookListManagerProps> = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        console.log('🔘 Edit OBB button clicked for book:', book.id, 'title:', book.title);
-                        console.log('🔘 onStartEditing function exists:', !!onStartEditing);
                         if (onStartEditing) {
-                          console.log('🔘 Calling onStartEditing with book ID:', book.id);
                           onStartEditing(book.id);
-                        } else {
-                          console.log('❌ onStartEditing is undefined!');
                         }
                       }}
                       className="btn-secondary text-xs py-1 px-2 flex items-center space-x-1"
@@ -373,8 +359,6 @@ const BookListManager: React.FC<BookListManagerProps> = ({
           setSelectedBookForSearch(null); // Clear selection when closing
         }}
         onBookSelected={(book) => {
-          console.log('Selected book from manual search:', book);
-          
           if (selectedBookForSearch) {
             // Replace the existing book
             const updatedMatches = bookMatches.map(existingBook => 
@@ -425,6 +409,7 @@ const BookListManager: React.FC<BookListManagerProps> = ({
           isOpen={showAlternativesModal}
           onClose={() => setShowAlternativesModal(false)}
           currentBook={selectedBookForAlternatives}
+          taskId={taskId}
           onBookSwitched={handleBookSwitched}
         />
       )}

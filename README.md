@@ -1,41 +1,70 @@
-# Spinecat 🐱📚
+# Spinecat
 
-**Automated Book Spine OCR and Library Matching Pipeline**
+**Automated Book Spine Recognition and Library Matching System**
 
-Spinecat is a comprehensive system that automatically detects book spines in images, extracts text using Google Vision OCR, denoises the output, and matches it against the Open Library database using advanced ML techniques.
+Spinecat is an intelligent system that automatically identifies books from photographs of book spines. It uses computer vision to detect book spines, extracts text using optical character recognition, cleans up the text, and matches it against a comprehensive library database to identify the books.
 
-## 🚀 Features
+## What This System Does
 
-- **YOLO-based Spine Detection**: Uses trained YOLOv8-OBB model for accurate book spine detection
-- **Multi-Angle OCR**: Google Vision API with intelligent angle detection for rotated text
-- **Advanced Text Denoising**: ML-powered cleaning of OCR artifacts and jumbled text
-- **Smart Library Matching**: Multiple matching strategies including fuzzy, token-based, and semantic similarity
-- **Comprehensive Pipeline**: End-to-end processing from image to matched book results
-- **Rich CLI Interface**: Beautiful console output with progress tracking and detailed results
+When you take a photo of a bookshelf or a stack of books, Spinecat can:
 
-## 🏗️ Architecture
+1. **Detect individual book spines** in the image using a trained computer vision model
+2. **Extract text** from each spine using advanced OCR technology
+3. **Clean up the text** to fix common OCR errors and formatting issues
+4. **Search a library database** to find matching books
+5. **Provide detailed results** showing which books were identified
 
-```
-Image Input → YOLO Detection → OCR Extraction → Text Denoising → Open Library Search → ML Matching → Results
-```
+This is particularly useful for librarians, book collectors, or anyone who needs to quickly catalog or identify books from photographs.
 
-### Core Components
+## How the Pipeline Works
 
-- **`SpinecatPipeline`**: Main orchestrator coordinating all components
-- **`MultiAngleOCRProcessor`**: Handles OCR at multiple angles using Google Vision
-- **`TextDenoiser`**: Cleans and reorders jumbled OCR text
-- **`OpenLibraryClient`**: Searches Open Library API with flexible strategies
-- **`BookMatcher`**: ML-based matching using multiple similarity algorithms
+The system processes images through several interconnected stages:
 
-## 📦 Installation
+### Stage 1: Spine Detection
+The system uses a YOLO (You Only Look Once) computer vision model that has been specifically trained to recognize book spines in images. This model can detect spines even when they are rotated, angled, or partially obscured. It creates bounding boxes around each detected spine region.
 
-### Prerequisites
+### Stage 2: Text Extraction
+For each detected spine, the system extracts the text using Google's Vision API, which provides high-quality optical character recognition. The system is smart enough to try multiple angles if the initial text extraction doesn't produce good results, since book spines can be oriented in different directions.
 
-- Python 3.8+
-- Google Vision API key
-- Trained YOLO model (`models/yolo-spine-obb-final2/weights/best.pt`)
+### Stage 3: Text Cleaning
+OCR systems often make mistakes, especially with book spines that may have unusual fonts, colors, or orientations. The text cleaning stage fixes common problems like:
+- Character recognition errors (confusing '0' with 'O', 'l' with '1', etc.)
+- Jumbled word order that sometimes occurs with OCR
+- Extra symbols or formatting artifacts
+- Inconsistent spacing and punctuation
 
-### Setup
+### Stage 4: Library Matching
+The cleaned text is then searched against the Open Library database, which contains information about millions of books. The system uses advanced matching algorithms that can handle:
+- Partial matches when only part of a title is visible
+- Fuzzy matching to account for remaining OCR errors
+- Character-level similarity using TF-IDF (Term Frequency-Inverse Document Frequency) analysis
+- Multi-feature scoring that considers title similarity, author names, and other book metadata
+
+### Stage 5: Results Generation
+The system provides detailed results showing:
+- Which spines were successfully identified
+- Confidence scores for each match
+- Alternative matches when the top result might not be correct
+- Processing statistics and timing information
+
+## System Architecture
+
+The system consists of several key components that work together:
+
+- **SpinecatPipeline**: The main coordinator that manages the entire process
+- **MultiAngleOCRProcessor**: Handles text extraction with intelligent angle detection
+- **TextDenoiser**: Cleans and corrects OCR output
+- **OpenLibraryClient**: Searches the Open Library database
+- **AdvancedBookMatcher**: Uses machine learning for accurate book matching
+
+## Installation and Setup
+
+### Requirements
+- Python 3.8 or higher
+- Google Vision API key (for OCR processing)
+- Trained YOLO model file
+
+### Installation Steps
 
 1. **Clone the repository**
    ```bash
@@ -43,80 +72,66 @@ Image Input → YOLO Detection → OCR Extraction → Text Denoising → Open Li
    cd Spinecat
    ```
 
-2. **Install dependencies**
+2. **Install Python dependencies**
    ```bash
    pip install -r requirements.txt
    ```
 
-3. **Configure environment**
+3. **Set up your Google Vision API key**
    ```bash
-   # Copy environment template
-   cp .env.example .env
-   
-   # Edit .env with your API key
-   GOOGLE_VISION_API_KEY=your_actual_api_key_here
+   export GOOGLE_VISION_API_KEY="your_actual_api_key_here"
    ```
 
-4. **Download NLTK data** (first run will do this automatically)
+4. **Download required language data**
    ```bash
    python -c "import nltk; nltk.download('punkt'); nltk.download('words')"
    ```
 
-## 🎯 Usage
+## Usage
 
 ### Basic Usage
 
-Process a single image:
+To process a single image using the pipeline directly:
 ```bash
-python -m src.main process --image book_stack.jpg
+python -c "
+from permanent_pipeline.src.core.pipeline import create_pipeline
+pipeline = create_pipeline()
+results = pipeline.process_image('your_book_photo.jpg')
+print(results)
+"
 ```
 
-### Advanced Options
+### Web Interface
 
-```bash
-# Custom confidence threshold
-python -m src.main process --image book_stack.jpg --confidence 0.5
+The system also includes a web interface for easier use:
 
-# Custom output directory
-python -m src.main process --image book_stack.jpg --output my_results/
+1. **Start the backend server**
+   ```bash
+   cd web_interface/backend
+   python main.py
+   ```
 
-# Disable semantic matching (faster)
-python -m src.main process --image book_stack.jpg --no-semantic
+2. **Start the frontend** (in a new terminal)
+   ```bash
+   cd web_interface
+   npm start
+   ```
 
-# Verbose logging
-python -m src.main process --image book_stack.jpg --verbose
+3. **Open your browser** to `http://localhost:3000` and upload your book images
 
-# Custom model path
-python -m src.main process --image book_stack.jpg --model path/to/model.pt
-```
+### Configuration Options
 
-### Configuration
+You can customize the system behavior through environment variables:
 
-The system can be configured via environment variables or a config file:
+- `PADDING_PIXELS`: Amount of padding around detected spines (default: 25)
+- `ANGLE_TOLERANCE`: Degrees before rotation is applied (default: 5.0)
+- `CONFIDENCE_THRESHOLD`: Minimum confidence for spine detection (default: 0.3)
+- `ADVANCED_MATCHING_CONFIDENCE_THRESHOLD`: Minimum confidence for book matches (default: 0.65)
+- `ADVANCED_MATCHING_TOP_K`: Number of top matches to return (default: 10)
 
-```bash
-# Environment variables
-export GOOGLE_VISION_API_KEY="your_key"
-export PADDING_PIXELS=30
-export USE_SEMANTIC_MATCHING=true
+## Output Format
 
-# Or use .env file
-echo "GOOGLE_VISION_API_KEY=your_key" > .env
-```
-
-## 🔧 Configuration Options
-
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `PADDING_PIXELS` | 25 | Padding around detected spines |
-| `ANGLE_TOLERANCE` | 5.0 | Degrees before rotation is applied |
-| `CONFIDENCE_THRESHOLD` | 0.3 | YOLO detection confidence |
-| `USE_SEMANTIC_MATCHING` | true | Enable semantic similarity |
-| `OPEN_LIBRARY_RATE_LIMIT` | 0.1 | Seconds between API requests |
-
-## 📊 Output
-
-Results are saved to JSON files in the output directory:
+The system generates detailed JSON results for each processed image:
 
 ```json
 {
@@ -144,107 +159,99 @@ Results are saved to JSON files in the output directory:
 }
 ```
 
-## 🧪 Testing
+## Performance Characteristics
 
-Run the test suite:
+The system is designed for efficiency:
+
+- **Spine Detection**: Approximately 100 milliseconds per image (with GPU acceleration)
+- **Text Extraction**: Approximately 500 milliseconds per spine
+- **Text Cleaning**: Approximately 50 milliseconds per text
+- **Library Matching**: Approximately 200 milliseconds per spine
+- **Total Processing Time**: 1-2 seconds per spine end-to-end
+
+## Technical Details
+
+### Machine Learning Components
+
+The system uses several machine learning techniques:
+
+- **YOLO Object Detection**: For identifying book spines in images
+- **Character N-gram TF-IDF**: For robust text similarity matching that handles OCR errors
+- **Multi-feature Scoring**: Combines multiple similarity measures for accurate matching
+- **Confidence-based Classification**: Categorizes matches as exact, strong, moderate, weak, or poor
+
+### Text Processing Pipeline
+
+The text processing uses natural language processing techniques:
+
+- **Tokenization**: Breaks text into meaningful units
+- **Character-level Analysis**: Handles OCR character confusion patterns
+- **Fuzzy Matching**: Accounts for spelling variations and OCR errors
+- **Semantic Similarity**: Considers meaning beyond exact text matches
+
+## Development and Testing
+
+### Running Tests
+
 ```bash
+# Run all tests
 pytest tests/
+
+# Test specific components
+python -m permanent_pipeline.src.core.ocr_processor
+python -m permanent_pipeline.src.core.denoising
 ```
-
-Test individual components:
-```bash
-# Test OCR processor
-python -m src.core.ocr_processor
-
-# Test text denoising
-python -m src.core.denoising
-
-# Test library matching
-python -m src.core.matching
-```
-
-## 🔍 How It Works
-
-### 1. Spine Detection
-- YOLOv8-OBB model detects oriented bounding boxes for book spines
-- Handles rotated and angled spines automatically
-
-### 2. OCR Processing
-- Extracts spine regions with intelligent padding
-- Tests multiple rotation angles (0°, 90°, detected angle)
-- Uses Google Vision API for high-quality text extraction
-
-### 3. Text Denoising
-- **Basic Cleaning**: Removes artifacts and normalizes text
-- **OCR Error Correction**: Fixes common character recognition mistakes
-- **Jumbled Text Reordering**: ML-based approach to fix word order issues
-- **Noise Removal**: Eliminates irrelevant symbols and numbers
-- **Validation**: Ensures text quality meets book title standards
-
-### 4. Library Matching
-- **Fuzzy Matching**: Handles OCR errors and typos
-- **Token-based Matching**: Manages word order and partial matches
-- **Semantic Similarity**: Uses sentence transformers for meaning-based matching
-- **TF-IDF Similarity**: Keyword-based matching for technical titles
-
-## 🚀 Performance
-
-- **Detection**: ~100ms per image (GPU)
-- **OCR**: ~500ms per spine
-- **Denoising**: ~50ms per text
-- **Matching**: ~200ms per spine (with semantic matching)
-- **Total**: ~1-2 seconds per spine end-to-end
-
-## 🛠️ Development
 
 ### Project Structure
+
 ```
-src/
-├── core/                 # Core pipeline components
-│   ├── models.py        # Data models and structures
-│   ├── pipeline.py      # Main pipeline orchestrator
-│   ├── ocr_processor.py # OCR processing logic
-│   ├── denoising.py     # Text denoising algorithms
-│   ├── open_library.py  # Open Library API client
-│   ├── matching.py      # ML-based matching
-│   └── config.py        # Configuration management
-├── main.py              # CLI interface
-└── __init__.py          # Package initialization
+permanent_pipeline/
+├── src/
+│   └── core/
+│       ├── models.py           # Data structures and models
+│       ├── pipeline.py         # Main processing pipeline
+│       ├── ocr_processor.py    # Text extraction logic
+│       ├── denoising.py        # Text cleaning algorithms
+│       ├── open_library.py     # Library database client
+│       ├── matching_v2.py      # Advanced matching algorithms
+│       └── config.py           # Configuration management
+
+└── requirements.txt            # Python dependencies
+
+web_interface/
+├── backend/                    # FastAPI server
+├── src/                        # React frontend
+└── build/                      # Compiled frontend
 ```
 
-### Adding New Components
+## Troubleshooting
 
-1. **Create component module** in `src/core/`
-2. **Add to pipeline** in `src/core/pipeline.py`
-3. **Update models** if needed in `src/core/models.py`
-4. **Add tests** in `tests/` directory
+### Common Issues
 
-### Contributing
+1. **Poor spine detection**: Try adjusting the confidence threshold or ensure good lighting in your images
+2. **OCR errors**: The text cleaning system should handle most issues, but very blurry or low-contrast text may still cause problems
+3. **No matches found**: Check that the book exists in the Open Library database, or try adjusting the matching confidence threshold
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests
-5. Submit a pull request
+### Getting Help
 
-## 📝 License
+If you encounter issues:
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+1. Check the console output for error messages
+2. Verify your Google Vision API key is correctly configured
+3. Ensure all dependencies are properly installed
+4. Review the configuration settings for your use case
 
-## 🙏 Acknowledgments
+## License
 
-- **YOLOv8**: Ultralytics for the detection model
-- **Google Vision API**: High-quality OCR capabilities
-- **Open Library**: Comprehensive book database
-- **Sentence Transformers**: Semantic similarity models
+This project is licensed under the MIT License. See the LICENSE file for details.
 
-## 📞 Support
+## Acknowledgments
 
-For questions, issues, or contributions:
-- Open an issue on GitHub
-- Check the documentation
-- Review the test examples
+This system builds upon several excellent open-source projects and services:
 
----
-
-**Happy book hunting! 📚🔍**
+- **YOLOv8**: For the computer vision model used in spine detection
+- **Google Vision API**: For high-quality optical character recognition
+- **Open Library**: For the comprehensive book database
+- **scikit-learn**: For machine learning algorithms and text processing
+- **FastAPI**: For the web interface backend
+- **React**: For the user interface frontend
